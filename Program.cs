@@ -2,116 +2,194 @@
 {
     internal class Program
     {
+        public delegate void StartSearchDelegate();
+
         public enum TypeOfEntity
         {
             Folder = 1,
             File = 2
         }
+
+        public enum UserChoiseAbortOrExclude
+        {
+            Abort = 1,
+            Exclude = 2
+        }
+
         public class FoundEntities
         {
             public string Name { get; set; }
-            public string Type { get; set; }
-            public bool SearchedByUserConditions { get; set; }
+            public TypeOfEntity TypeOfEntity { get; set; }
+            public bool? SearchedByUserConditions { get; set; }
         }
 
         public class FileSystemVisitor
         {
-            public string FolderPath { get; set; }
-            public string FileOrFolderName { get; set; }
-            public TypeOfEntity TypeOfEntity { get; set; }
-            public List<FoundEntities> FoundEntitiesList { get; set; }= new List<FoundEntities>();
-
-            public delegate void SetValuesDelegate(string folderPath, string fileOrFolderName, TypeOfEntity typeOfEntity);
-            public delegate bool ShowNotificationDelegate(string key, string value);
-
-            public void SetValuesForEntity(string folderPath, string fileOrFolderName, TypeOfEntity typeOfEntity)
+            public FileSystemVisitor(string folderPath)
             {
                 FolderPath = folderPath;
-                TypeOfEntity = typeOfEntity;
-                FileOrFolderName = fileOrFolderName;
+
+                StartSearchDelegate = (StartOrdinarySearch);
+                StartSearchDelegate += ShowOrdinarySearchForUser;
+                StartSearchDelegate();
             }
-            public void Searching()
+
+            public FileSystemVisitor(string folderPath, string fileOrFolderName, TypeOfEntity typeOfEntity, UserChoiseAbortOrExclude abortOrExclude)
             {
-                Console.WriteLine("Searching is started.");
-                try
+                FolderPath = folderPath;
+                FileOrFolderName = fileOrFolderName;
+                TypeOfEntity = typeOfEntity;
+                AbortOrExclude= abortOrExclude;
+
+                StartSearchDelegate = (StartOrdinarySearch);
+                StartSearchDelegate += ShowAllFoundedEntitiesWithMarkIfItSatisfiedUserConditions;
+                StartSearchDelegate += ShowFinalList;
+                StartSearchDelegate();
+            }
+
+            public string FolderPath { get; set; }
+            public string? FileOrFolderName { get; set; }
+            public TypeOfEntity? TypeOfEntity { get; set; }
+            public List<FoundEntities> FoundAllEntitiesList { get; set; } = new List<FoundEntities>();
+            public List<FoundEntities> FinalFoundEntitiesList { get; set; } = new List<FoundEntities>();
+            public StartSearchDelegate StartSearchDelegate { get; set; }
+            public UserChoiseAbortOrExclude AbortOrExclude { get; set; }
+
+            public delegate void ShowMessageDelegate(string message);
+
+            //For ordinary search
+            public void StartOrdinarySearch()
+            {
+                ShowMessageDelegate showMessageDelegate = ShowMessage;
+                showMessageDelegate("Start searching...");
+                Console.WriteLine("OrdinarySearch search is started.");
+                if (Directory.Exists(FolderPath))
                 {
                     var folders = Directory.GetDirectories(FolderPath);
+                    var files = Directory.GetFiles(FolderPath);
                     foreach (var folder in folders)
                     {
-                        FoundEntitiesList.Add(new FoundEntities{Name = folder.Remove(0, FolderPath.Length),Type = "Folder"});
+                        FoundAllEntitiesList.Add(new FoundEntities(){ Name = folder.Remove(0, FolderPath.Length), TypeOfEntity = Program.TypeOfEntity.Folder});
                     }
-
-                    var files = Directory.GetFiles(FolderPath);
-
                     foreach (var file in files)
                     {
-                        FoundEntitiesList.Add(new FoundEntities() { Name = file.Remove(0, FolderPath.Length), Type = "File" });
+                        FoundAllEntitiesList.Add(new FoundEntities() { Name = file.Remove(0, FolderPath.Length), TypeOfEntity = Program.TypeOfEntity.File });
                     }
-
                 }
-                catch (Exception)
+                else
                 {
-                    Console.WriteLine("Searching Error.");
-                    throw;
-                }
-                finally
-                {
-                    Console.WriteLine("Searching is finished.");
+                    Console.WriteLine("Error. Can not find directory.");
                 }
             }
 
-            public void ShowAllFoundEntities()
+            public void ShowOrdinarySearchForUser()
+            {
+                ShowMessageDelegate showMessageDelegate = ShowMessage;
+                Console.WriteLine($"Found: " + FoundAllEntitiesList.Count + " entities");
+                var i=1;
+                foreach (var entity in FoundAllEntitiesList)
+                {
+                    Thread.Sleep(500);
+                    var message =i+ ". Found "+entity.Name+"-"+" "+ entity.TypeOfEntity;
+                    showMessageDelegate(message);
+                    i++;
+                }
+                showMessageDelegate("Searching is finished.");
+            }
+
+            //For NOT ordinary search
+            public void ShowAllFoundedEntitiesWithMarkIfItSatisfiedUserConditions()
+            {
+                ShowMessageDelegate showMessageDelegate = ShowMessage;
+                Console.WriteLine($"Found: " + FoundAllEntitiesList.Count + " entities");
+
+                var i = 1;
+                if (AbortOrExclude == UserChoiseAbortOrExclude.Abort)
+                {
+                    foreach (var entity in FoundAllEntitiesList)
+                    {
+                        Thread.Sleep(500);
+                        string message;
+                        if (entity.Name.Contains(FileOrFolderName) && entity.TypeOfEntity == TypeOfEntity)
+                        {
+                            entity.SearchedByUserConditions = true;
+                            message = i + ". Found " + entity.Name + " - " + entity.TypeOfEntity + " FOUNDED by user conditions";
+                            showMessageDelegate(message);
+                            Console.WriteLine("Abort searching...");
+                            return;
+                        }
+                        else
+                        {
+                            FinalFoundEntitiesList.Add(entity);
+                            message = i + ". Found " + entity.Name + " - " + entity.TypeOfEntity;
+                            showMessageDelegate(message);
+                        }
+                        i++;
+                    }
+                    showMessageDelegate("Searching is finished not found any entities.");
+
+                }
+                else
+                {
+                    foreach (var entity in FoundAllEntitiesList)
+                    {
+                        Thread.Sleep(500);
+                        string message;
+                        int count = 0;
+                        if (entity.Name.Contains(FileOrFolderName) && entity.TypeOfEntity == TypeOfEntity)
+                        {
+                            count++;
+
+                            message = i + ". Found " + entity.Name + "-" + " " + entity.TypeOfEntity + " founded by user conditions.";
+                            showMessageDelegate(message);
+                            showMessageDelegate("Excluding from final list...");
+                            Thread.Sleep(1500);
+                            showMessageDelegate("Excluded.");
+                        }
+                        else
+                        {
+                            FinalFoundEntitiesList.Add(entity);
+                            message = i + ". Found " + entity.Name + "-" + " " + entity.TypeOfEntity;
+                            showMessageDelegate(message);
+                        }
+                        i++;
+                    }
+                }
+            }
+
+            public void ShowFinalList()
             {
                 Console.WriteLine();
-                Console.WriteLine("Folders and files found:" + FoundEntitiesList.Count);
-                Console.WriteLine("_________________");
+                Console.WriteLine();
+
+                Console.WriteLine("Final list founded entities.");
                 var i = 1;
-                foreach (var entity in FoundEntitiesList)
+                foreach (var entity in FinalFoundEntitiesList)
                 {
-                    if (entity.Name.Equals(FileOrFolderName) && entity.Type == TypeOfEntity.ToString())
-                    {
-                        ShowNotificationDelegate notificationDelegate = (ShowNotificationSuccessFound);
-                        entity.SearchedByUserConditions = notificationDelegate(entity.Name, entity.Type);
-                        Console.WriteLine(i + ". " + entity.Name + " - " + entity.Type+ " FOUNDED");
-                    }
-                    else
-                    {
-                        Console.WriteLine(i + ". " + entity.Name + " - " + entity.Type);
-                    }
+                    Console.WriteLine(i + ". Found " + entity.Name + "-" + " " + entity.TypeOfEntity);
                     i++;
                 }
-                Console.WriteLine("_________________");
             }
 
-            public void ShowFoundEntitiesByType()
+            public void ShowMessage(string message)
             {
-                Console.WriteLine("_________________");
-                var i = 1;
-                var entitiesByType = FoundEntitiesList.Where(entity => entity.Type == TypeOfEntity.ToString()).Select(entity => entity.Name).ToList();
-
-                Console.WriteLine("Found " + entitiesByType.Count + " type of " + TypeOfEntity);
-                foreach (var entity in entitiesByType)
-                {
-                    Console.WriteLine(i + " " + entity);
-                    i++;
-                }
-
-                Console.WriteLine("_________________");
+                Console.WriteLine(message);
             }
-
-            public bool ShowNotificationSuccessFound(string key, string value) => true;
         }
 
-        public delegate void StartSearchDelegate();
-        public static event StartSearchDelegate StartSearchEvent;
 
         static void Main(string[] args)
         {
             string folderPath;
             string fileOrFolderName;
             TypeOfEntity typeOfEntity;
-            string startSearch;
-            string userChoise;
+            UserChoiseAbortOrExclude abortOrExclude;
+
+
+            string choiseNeedFind;
+            string choiseNeedFindFileOrFolder;
+            string userChoiseAbortOrExclude;
+            FileSystemVisitor fileSystemVisitor;
 
             do
             {
@@ -120,54 +198,44 @@
             } while (folderPath.Length < 1);
 
 
-            Console.WriteLine("Enter file(or folder) name:");
-            fileOrFolderName = Console.ReadLine();
-
-
-            string choiseForTypeOfEntity;
             do
             {
-                Console.WriteLine("Enter the type of entity: \n 1 - File \n 2 - Folder.");
-                choiseForTypeOfEntity = Console.ReadLine();
-            } while (choiseForTypeOfEntity != "1" && choiseForTypeOfEntity != "2");
-            typeOfEntity = choiseForTypeOfEntity == "1" ? TypeOfEntity.File : TypeOfEntity.Folder;
+                Console.WriteLine("Do you need find file/folder \n 1 - Yes \n 2 - No.");
+                choiseNeedFind = Console.ReadLine();
+            } while (choiseNeedFind != "1" && choiseNeedFind != "2");
 
-            FileSystemVisitor fileSystemVisitor = new FileSystemVisitor();
-
-            FileSystemVisitor.SetValuesDelegate setValuesDelegate = (fileSystemVisitor.SetValuesForEntity);
-            setValuesDelegate(folderPath, fileOrFolderName, typeOfEntity);
-
-            do
+            if (choiseNeedFind == "2")
             {
-                Console.WriteLine("Enter start");
-                startSearch = Console.ReadLine().ToLower();
-            } while (startSearch != "start");
-
-            StartSearchEvent += fileSystemVisitor.Searching;
-            StartSearchEvent();
-
-            var chancel=Console.ReadLine();
-
-            Console.WriteLine("_________________");
-
-            do
-            {
-                Console.WriteLine("Choose action: " +
-                                  "\n 1 - Show all founded folders and files with founded by user NAME condition marks " +
-                                  "\n 2 - Show founded by user TYPE condition marks.");
-                userChoise = Console.ReadLine().ToLower();
-            } while (userChoise != "1" && userChoise != "2");
-
-            switch (userChoise)
-            {
-                case "1":
-                    fileSystemVisitor.ShowAllFoundEntities();
-                    break;
-                case "2":
-                    fileSystemVisitor.ShowFoundEntitiesByType();
-                    break;
+                //create filevisitor ordinary
+                fileSystemVisitor = new FileSystemVisitor(folderPath);
             }
-            
+            else
+            {
+                //create filevisitor with delegate
+                do
+                {
+                    Console.WriteLine("What do you want find \n 1 - File \n 2 - Folder.");
+                    choiseNeedFindFileOrFolder = Console.ReadLine();
+                } while (choiseNeedFindFileOrFolder != "1" && choiseNeedFindFileOrFolder != "2");
+
+                typeOfEntity = choiseNeedFindFileOrFolder == "1" ? TypeOfEntity.File : TypeOfEntity.Folder;
+
+                Console.WriteLine("Enter Name finding entity");
+                fileOrFolderName = Console.ReadLine();
+
+                do
+                {
+                    Console.WriteLine("What should be next step \n 1 - Abort searching if find by user condition " +
+                                      "\n 2 - Exclude found file/folder.");
+                    userChoiseAbortOrExclude = Console.ReadLine();
+                } while (userChoiseAbortOrExclude != "1" && userChoiseAbortOrExclude != "2");
+
+                abortOrExclude = userChoiseAbortOrExclude =="1" ? UserChoiseAbortOrExclude.Abort : UserChoiseAbortOrExclude.Exclude;
+
+                fileSystemVisitor = new FileSystemVisitor(folderPath, fileOrFolderName, typeOfEntity, abortOrExclude);
+            }
+
+            Console.WriteLine("Press any key for exit.");
             Console.ReadKey();
         }
     }
